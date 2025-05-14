@@ -5,6 +5,7 @@ edition = "2024"
 authors = ["teamclouday <teamclouday@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+description = "CLI tool to encode/decode secrets files"
 homepage = "https://github.com/teamclouday/secrets-cli"
 repository = "https://github.com/teamclouday/secrets-cli"
 keywords = ["secrets", "cli", "encryption"]
