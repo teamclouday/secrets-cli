@@ -11,7 +11,7 @@ use magic_crypt::{MagicCryptTrait, new_magic_crypt};
 )]
 struct Args {
     /// Location of the secrets file
-    #[arg(short, long, default_value = ".env")]
+    #[arg(short, long)]
     filepath: String,
 
     /// Encoded secrets text
