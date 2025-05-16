@@ -21,6 +21,10 @@ struct Args {
     /// Password for encoding/decoding
     #[arg(short, long, default_value = "secret")]
     password: String,
+
+    /// Whether to copy the output to clipboard
+    #[arg(long, default_value_t = false, action = clap::ArgAction::SetTrue)]
+    copy: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,7 +54,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Encode JSON string to base64
         let encoded_json = mcrypt.encrypt_bytes_to_base64(&buffer);
+
+        // Print the encoded string
         println!("{}", encoded_json);
+
+        if args.copy {
+            // Copy the encoded string to clipboard
+            let mut clipboard = arboard::Clipboard::new().expect("Failed to open clipboard");
+            clipboard
+                .set_text(encoded_json.clone())
+                .expect("Failed to copy to clipboard");
+            println!("Copied to clipboard");
+        }
     }
 
     Ok(())
