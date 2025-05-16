@@ -23,8 +23,12 @@ struct Args {
     password: String,
 
     /// Whether to copy the output to clipboard
-    #[arg(long, default_value_t = false, action = clap::ArgAction::SetTrue)]
+    #[arg(short, long, default_value_t = false, action = clap::ArgAction::SetTrue)]
     copy: bool,
+
+    /// Whether to overwrite the file if it exists
+    #[arg(short, long, default_value_t = false, action = clap::ArgAction::SetTrue)]
+    overwrite: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,19 +42,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .decrypt_base64_to_bytes(text)
             .expect("Failed to decrypt base64 data");
 
+        // If the file already exists, make a backup
+        if std::path::Path::new(&args.filepath).exists() {
+            if args.overwrite {
+                println!("Overwriting existing {}", args.filepath);
+            } else {
+                let backup_path = format!("{}.bak", args.filepath);
+                std::fs::rename(&args.filepath, &backup_path)
+                    .expect(format!("Failed to rename existing file to {}", backup_path).as_str());
+                println!("Created backup {}", backup_path);
+            }
+        }
+
         // Write the binary data to a file
-        std::fs::write(args.filepath.clone(), &decrypted_data)
-            .expect(format!("Failed to write decrypted data to file: {}", args.filepath).as_str());
+        std::fs::write(&args.filepath, &decrypted_data)
+            .expect(format!("Failed to write decrypted data to {}", args.filepath).as_str());
         println!("Decoded to {}", args.filepath);
     }
     // Encoding mode
     else {
         // Load the file contents
         let mut file = std::fs::File::open(&args.filepath)
-            .expect(format!("Failed to open file: {}", args.filepath).as_str());
+            .expect(format!("Failed to open {}", args.filepath).as_str());
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)
-            .expect(format!("Failed to read file: {}", args.filepath).as_str());
+            .expect(format!("Failed to read {}", args.filepath).as_str());
 
         // Encode JSON string to base64
         let encoded_json = mcrypt.encrypt_bytes_to_base64(&buffer);
