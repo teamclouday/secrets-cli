@@ -1,7 +1,20 @@
-use std::io::Read;
+use std::fmt;
 
 use clap::Parser;
+use console::{Style, style};
 use magic_crypt::{MagicCryptTrait, new_magic_crypt};
+use similar::{ChangeTag, TextDiff};
+
+struct Line(Option<usize>);
+
+impl fmt::Display for Line {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            None => write!(f, "    "),
+            Some(idx) => write!(f, "{:<4}", idx + 1),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -17,6 +30,10 @@ struct Args {
     /// Encoded secrets text
     #[arg(short, long)]
     text: Option<String>,
+
+    /// Another file to compare with the secrets file
+    #[arg(long)]
+    compare: Option<String>,
 
     /// Password for encoding/decoding
     #[arg(short, long, default_value = "secret")]
@@ -35,8 +52,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mcrypt = new_magic_crypt!(args.password, 256);
 
+    // Compare mode
+    if let Some(compare_path) = args.compare {
+        // Load the secrets file
+        let secrets_content = std::fs::read_to_string(&args.filepath)
+            .expect(format!("Failed to read {}", args.filepath).as_str())
+            .replace("\r\n", "\n");
+
+        // Load the comparison file
+        let compare_content = std::fs::read_to_string(&compare_path)
+            .expect(format!("Failed to read {}", compare_path).as_str())
+            .replace("\r\n", "\n");
+
+        // Create a text diff
+        let diff = TextDiff::from_lines(&secrets_content, &compare_content);
+        for (idx, group) in diff.grouped_ops(3).iter().enumerate() {
+            if idx > 0 {
+                println!("{:-^1$}", "-", 80);
+            }
+            for op in group {
+                for change in diff.iter_inline_changes(op) {
+                    let (sign, s) = match change.tag() {
+                        ChangeTag::Delete => ("-", Style::new().red()),
+                        ChangeTag::Insert => ("+", Style::new().green()),
+                        ChangeTag::Equal => (" ", Style::new().dim()),
+                    };
+                    print!(
+                        "{}{} |{}",
+                        style(Line(change.old_index())).dim(),
+                        style(Line(change.new_index())).dim(),
+                        s.apply_to(sign).bold(),
+                    );
+                    for (emphasized, value) in change.iter_strings_lossy() {
+                        if emphasized {
+                            print!("{}", s.apply_to(value).underlined().on_black());
+                        } else {
+                            print!("{}", s.apply_to(value));
+                        }
+                    }
+                    if change.missing_newline() {
+                        println!();
+                    }
+                }
+            }
+        }
+    }
     // Decoding mode
-    if let Some(text) = args.text {
+    else if let Some(text) = args.text {
         // Decode the base64 string to binary
         let decrypted_data = mcrypt
             .decrypt_base64_to_bytes(text)
@@ -62,23 +124,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Encoding mode
     else {
         // Load the file contents
-        let mut file = std::fs::File::open(&args.filepath)
-            .expect(format!("Failed to open {}", args.filepath).as_str());
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
+        let buffer = std::fs::read(&args.filepath)
             .expect(format!("Failed to read {}", args.filepath).as_str());
 
-        // Encode JSON string to base64
-        let encoded_json = mcrypt.encrypt_bytes_to_base64(&buffer);
+        // Encode file content to base64
+        let encoded = mcrypt.encrypt_bytes_to_base64(&buffer);
 
         // Print the encoded string
-        println!("{}", encoded_json);
+        println!("{}", encoded);
 
         if args.copy {
             // Copy the encoded string to clipboard
             let mut clipboard = arboard::Clipboard::new().expect("Failed to open clipboard");
             clipboard
-                .set_text(encoded_json.clone())
+                .set_text(encoded.clone())
                 .expect("Failed to copy to clipboard");
             println!("Copied to clipboard");
         }
