@@ -5,6 +5,12 @@ A CLI tool for synchronizing .env files with AWS Secrets Manager
 
 - AWS CLI installed and configured
 
+### Installation
+
+```
+cargo install tc-secrets
+```
+
 ### Commands
 
 ```
