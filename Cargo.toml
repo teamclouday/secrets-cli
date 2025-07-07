@@ -8,7 +8,7 @@ readme = "README.md"
 description = "CLI tool to synchronize .env secrets with AWS Secrets Manager with encryption"
 homepage = "https://github.com/teamclouday/secrets-cli"
 repository = "https://github.com/teamclouday/secrets-cli"
-keywords = ["secrets", "cli", "encryption", "aws", "secretsmanager", "dotenv"]
+keywords = ["env", "cli", "aws", "secretsmanager"]
 categories = ["command-line-utilities"]
 
 [dependencies]
