@@ -4,6 +4,8 @@ A CLI tool for synchronizing .env files with AWS Secrets Manager
 ### Prerequisites
 
 - AWS CLI installed and configured
+- Created an IAM user with permissions to access AWS Secrets Manager
+- Created a secret in AWS Secrets Manager, which will be used to store the `.env` file
 
 ### Installation
 
