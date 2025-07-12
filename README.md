@@ -35,6 +35,12 @@ cargo install tc-secrets
     tc-secrets sync -f .env
     ```
 
+### Remote Secret Structure
+
+The remote secret is defined by a `secret_id` and a `field_id`. The `secret_id` is the identifier for the secret in AWS Secrets Manager, and the `field_id` is the identifier for the specific field within that secret.
+
+With this structure, you can save multiple secret files in a single secret in AWS Secrets Manager, allowing for better organization and management of your secrets.
+
 ### Commands
 
 ```
