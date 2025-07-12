@@ -13,71 +13,6 @@ A CLI tool for synchronizing .env files with AWS Secrets Manager
 cargo install tc-secrets
 ```
 
-### Commands
-
-```
->>> tc-secrets -h
-A CLI tool for synchronizing .env secret files with AWS Secrets Manager
-
-Usage: tc-secrets.exe <COMMAND>
-
-Commands:
-  auth    Authenticate with AWS Secrets Manager
-  diff    Display differences between local and remote secret files
-  update  Increase the version of the local secret file
-  sync    Synchronize local secret file with AWS Secrets Manager
-  help    Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-```
-
-```
->>> tc-secrets auth -h
-Authenticate with AWS Secrets Manager
-
-Usage: tc-secrets.exe auth
-
-Options:
-  -h, --help  Print help
-```
-
-```
->>> tc-secrets diff -h
-Display differences between local and remote secret files
-
-Usage: tc-secrets.exe diff [OPTIONS] --filepath <FILEPATH>
-
-Options:
-  -f, --filepath <FILEPATH>  Path to the local secret file
-  -p, --password <PASSWORD>  Optional password for decrypting the secret file [default: secret]
-  -h, --help                 Print help
-```
-
-```
->>> tc-secrets update -h
-Increase the version of the local secret file
-
-Usage: tc-secrets.exe update --filepath <FILEPATH>
-
-Options:
-  -f, --filepath <FILEPATH>  Path to the local secret file
-  -h, --help                 Print help
-```
-
-```
->>> tc-secrets sync -h
-Synchronize local secret file with AWS Secrets Manager
-
-Usage: tc-secrets.exe sync [OPTIONS] --filepath <FILEPATH>
-
-Options:
-  -f, --filepath <FILEPATH>  Path to the local secret file
-  -p, --password <PASSWORD>  Optional password for decrypting the secret file [default: secret]
-  -h, --help                 Print help
-```
-
 ### Usage
 
 1. First authenticate with AWS Secrets Manager:
@@ -99,3 +34,82 @@ Options:
    ```
     tc-secrets sync -f .env
     ```
+
+### Commands
+
+```
+>>> tc-secrets -h
+A CLI tool for synchronizing .env secret files with AWS Secrets Manager
+
+Usage: tc-secrets <COMMAND>
+
+Commands:
+  auth   Authenticate with AWS Secrets Manager
+  diff   Display differences between local and remote secret files
+  bump   Increment the version of the local secret file
+  reset  Reset the local secret file by the remote secret
+  sync   Synchronize local secret file with the remote secret
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+```
+>>> tc-secrets auth -h
+Authenticate with AWS Secrets Manager
+
+Usage: tc-secrets auth
+
+Options:
+  -h, --help  Print help
+```
+
+```
+>>> tc-secrets diff -h
+Display differences between local and remote secret files
+
+Usage: tc-secrets diff [OPTIONS] --filepath <FILEPATH>
+
+Options:
+  -f, --filepath <FILEPATH>  Path to the local secret file
+  -p, --password <PASSWORD>  Optional password for decrypting the secret file [default: secret]
+  -h, --help                 Print help
+```
+
+```
+>>> tc-secrets bump -h
+Increment the version of the local secret file
+
+Usage: tc-secrets bump --filepath <FILEPATH>
+
+Options:
+  -f, --filepath <FILEPATH>  Path to the local secret file
+  -h, --help                 Print help
+```
+
+```
+>>> tc-secrets reset -h
+Reset the local secret file by the remote secret
+
+Usage: tc-secrets reset [OPTIONS] --filepath <FILEPATH>
+
+Options:
+  -f, --filepath <FILEPATH>  Path to the local secret file
+  -p, --password <PASSWORD>  Optional password for decrypting the secret file [default: secret]
+  -h, --help                 Print help
+```
+
+```
+>>> tc-secrets sync -h
+Synchronize local secret file with the remote secret
+
+Usage: tc-secrets sync [OPTIONS] --filepath <FILEPATH>
+
+Options:
+  -f, --filepath <FILEPATH>  Path to the local secret file
+  -p, --password <PASSWORD>  Optional password for decrypting the secret file [default: secret]
+  -h, --help                 Print help
+```
+

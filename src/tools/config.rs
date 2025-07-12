@@ -16,33 +16,45 @@ const SECRETS_ID_HEADER: &str = "#do-not-edit--secrets-id";
 const SECRETS_FIELD_ID_HEADER: &str = "#do-not-edit--secrets-field-id";
 
 impl EnvFile {
-    pub fn new(filepath: PathBuf) -> Result<Self, CliError> {
-        let content = std::fs::read_to_string(&filepath).map_err(|e| CliError::IoError(e))?;
+    pub fn new_local(filepath: PathBuf) -> Result<Self, CliError> {
+        let mut env_file = if filepath.exists() {
+            let content = std::fs::read_to_string(&filepath).map_err(|e| CliError::IoError(e))?;
 
-        Ok(EnvFile {
-            filepath: Some(filepath),
+            EnvFile {
+                filepath: Some(filepath),
+                content,
+                version: None,
+                secret_id: None,
+                field_id: None,
+            }
+        } else {
+            EnvFile {
+                filepath: Some(filepath),
+                content: String::new(),
+                version: None,
+                secret_id: None,
+                field_id: None,
+            }
+        };
+
+        env_file.parse()?;
+        Ok(env_file)
+    }
+
+    pub fn new_remote(content: String) -> Result<Self, CliError> {
+        let mut env_file = EnvFile {
+            filepath: None,
             content,
             version: None,
             secret_id: None,
             field_id: None,
-        })
+        };
+
+        env_file.parse()?;
+        Ok(env_file)
     }
 
-    pub fn create(filepath: PathBuf, content: Option<String>) -> Result<Self, CliError> {
-        let content = content.unwrap_or_else(|| String::new());
-
-        std::fs::write(&filepath, &content).map_err(|e| CliError::IoError(e))?;
-
-        Ok(EnvFile {
-            filepath: Some(filepath),
-            content,
-            version: None,
-            secret_id: None,
-            field_id: None,
-        })
-    }
-
-    pub fn parse(&mut self) -> Result<(), CliError> {
+    fn parse(&mut self) -> Result<(), CliError> {
         // parse the header to extract version, secret_id and field_id
         for line in self.content.lines() {
             if line.starts_with(SECRETS_VERSION_HEADER) {

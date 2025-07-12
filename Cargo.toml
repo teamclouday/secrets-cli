@@ -1,6 +1,6 @@
 [package]
 name = "tc-secrets"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["teamclouday <teamclouday@gmail.com>"]
 license = "MIT"
@@ -29,6 +29,3 @@ magic-crypt = "4.0.1"
 aws-config = "1.8.1"
 aws-sdk-sts = "1.76.0"
 aws-sdk-secretsmanager = "1.78.0"
-
-[dev-dependencies]
-assert_cmd = "2.0.17"

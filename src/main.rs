@@ -32,12 +32,24 @@ enum Commands {
         )]
         password: String,
     },
-    #[command(about = "Increase the version of the local secret file")]
-    Update {
+    #[command(about = "Increment the version of the local secret file")]
+    Bump {
         #[arg(help = "Path to the local secret file", short, long)]
         filepath: String,
     },
-    #[command(about = "Synchronize local secret file with AWS Secrets Manager")]
+    #[command(about = "Reset the local secret file by the remote secret")]
+    Reset {
+        #[arg(help = "Path to the local secret file", short, long)]
+        filepath: String,
+        #[arg(
+            help = "Optional password for decrypting the secret file",
+            short,
+            long,
+            default_value = "secret"
+        )]
+        password: String,
+    },
+    #[command(about = "Synchronize local secret file with the remote secret")]
     Sync {
         #[arg(help = "Path to the local secret file", short, long)]
         filepath: String,
@@ -84,8 +96,7 @@ async fn run(cli: Cli) -> Result<(), tools::CliError> {
             }
 
             // load the local secret file
-            let mut env_file = tools::EnvFile::new(path)?;
-            env_file.parse()?;
+            let env_file = tools::EnvFile::new_local(path)?;
 
             let secret_id = env_file.secret_id.ok_or_else(|| {
                 tools::CliError::InvalidEnvFileError(
@@ -114,7 +125,7 @@ async fn run(cli: Cli) -> Result<(), tools::CliError> {
             );
             tools::display_diff(decrypted_remote_secret, env_file.content);
         }
-        Commands::Update { filepath } => {
+        Commands::Bump { filepath } => {
             let path = std::path::PathBuf::from(filepath.clone());
 
             if !path.exists() {
@@ -125,8 +136,7 @@ async fn run(cli: Cli) -> Result<(), tools::CliError> {
             }
 
             // load the local secret file
-            let mut env_file = tools::EnvFile::new(path)?;
-            env_file.parse()?;
+            let mut env_file = tools::EnvFile::new_local(path)?;
 
             // increment the version
             let new_version = env_file.version.unwrap_or(0) + 1;
@@ -136,134 +146,179 @@ async fn run(cli: Cli) -> Result<(), tools::CliError> {
             env_file.write()?;
 
             println!(
-                "Updated the version of the secret file to {}",
+                "Bumped the version of the secret file to {}",
                 style(new_version).cyan()
+            );
+        }
+        Commands::Reset { filepath, password } => {
+            let encryption = tools::Encryption::new(password);
+            let path = std::path::PathBuf::from(filepath.clone());
+
+            // load the local secret file
+            let mut local_env_file = tools::EnvFile::new_local(path.clone())?;
+
+            let aws_secret = load_env_info(&aws_client, &filepath, &mut local_env_file).await?;
+
+            let secret_id = local_env_file.secret_id.ok_or_else(|| {
+                tools::CliError::InvalidEnvFileError(
+                    "The secret file does not contain a secret ID.".to_string(),
+                )
+            })?;
+            let field_id = local_env_file.field_id.ok_or_else(|| {
+                tools::CliError::InvalidEnvFileError(
+                    "The secret file does not contain a field ID.".to_string(),
+                )
+            })?;
+
+            // load the remote secret from AWS Secrets Manager
+            let decrypted_remote_secret =
+                encryption.decrypt(aws_secret.load_field(field_id.clone())?)?;
+
+            let mut remote_env_file = tools::EnvFile::new_remote(decrypted_remote_secret)?;
+            remote_env_file.secret_id = remote_env_file.secret_id.or(Some(secret_id.clone()));
+            remote_env_file.field_id = remote_env_file.field_id.or(Some(field_id.clone()));
+            remote_env_file.version = remote_env_file.version.or(Some(1));
+            remote_env_file.filepath = Some(path.clone());
+
+            if path.exists() {
+                if dialoguer::Confirm::new()
+                    .with_prompt(format!(
+                        "The file {} already exists. Do you want to make a `.bak` backup?",
+                        style(filepath.clone()).cyan()
+                    ))
+                    .default(true)
+                    .interact()
+                    .expect("Failed to confirm backup")
+                {
+                    // create a backup of the local file
+                    let backup_path = path.with_extension("bak");
+                    std::fs::copy(&path, &backup_path).map_err(|e| tools::CliError::IoError(e))?;
+                } else {
+                    println!(
+                        "Overwriting file {} with remote secret",
+                        style(filepath.clone()).cyan()
+                    );
+                }
+            }
+
+            remote_env_file.write()?;
+
+            println!(
+                "Local secret file has been reset by remote secret {}",
+                style(format!("{}/{}", secret_id, field_id)).cyan()
             );
         }
         Commands::Sync { filepath, password } => {
             let encryption = tools::Encryption::new(password);
-
             let path = std::path::PathBuf::from(filepath.clone());
 
-            if !path.exists() {
-                // in this case, try to download a secret from the AWS Secrets Manager
-                let remote_secrets = aws_client.list_secrets().await?;
+            // load the local secret file
+            let mut local_env_file = tools::EnvFile::new_local(path.clone())?;
+            let mut aws_secret = load_env_info(&aws_client, &filepath, &mut local_env_file).await?;
 
-                let selection = Select::new()
-                    .with_prompt(format!(
-                        "No local file found at {}. Please select a secret ID to download:",
-                        style(filepath.clone()).cyan()
-                    ))
-                    .items(&remote_secrets)
-                    .default(0)
-                    .interact()
-                    .expect("Failed to select a secret ID");
+            let secret_id = local_env_file.secret_id.ok_or_else(|| {
+                tools::CliError::InvalidEnvFileError(
+                    "The secret file does not contain a secret ID.".to_string(),
+                )
+            })?;
+            let field_id = local_env_file.field_id.ok_or_else(|| {
+                tools::CliError::InvalidEnvFileError(
+                    "The secret file does not contain a field ID.".to_string(),
+                )
+            })?;
 
-                let secret_id = remote_secrets[selection].clone();
+            println!(
+                "Synchronizing with remote secret {}",
+                style(format!("{}/{}", secret_id, field_id)).cyan()
+            );
 
-                // load the remote secret from AWS Secrets Manager
-                let aws_secret =
-                    tools::AWSSecret::new(aws_client.load_secret(secret_id.clone()).await?)?;
+            // load the remote secret from AWS Secrets Manager
+            let decrypted_remote_secret =
+                encryption.decrypt(aws_secret.load_field(field_id.clone())?)?;
 
-                let remote_fields = aws_secret.list_fields();
+            let mut remote_env_file = tools::EnvFile::new_remote(decrypted_remote_secret)?;
+            remote_env_file.secret_id = remote_env_file.secret_id.or(Some(secret_id.clone()));
+            remote_env_file.field_id = remote_env_file.field_id.or(Some(field_id.clone()));
 
-                let selection = Select::new()
-                    .with_prompt(format!(
-                        "Please select a field ID to load from secret {}:",
-                        style(secret_id.clone()).cyan()
-                    ))
-                    .items(&remote_fields)
-                    .default(0)
-                    .interact()
-                    .expect("Failed to select a field ID");
+            // compare the local and remote versions
+            let local_version = local_env_file.version.clone().unwrap_or(0);
+            let remote_version = remote_env_file.version.clone().unwrap_or(0);
 
-                let field_id = remote_fields[selection].clone();
-
-                let decrypted_remote_secret =
-                    encryption.decrypt(aws_secret.load_field(field_id.clone())?)?;
-
-                // create a new EnvFile and save the decrypted remote secret
-                let mut env_file =
-                    tools::EnvFile::create(path.clone(), Some(decrypted_remote_secret))?;
-
-                env_file.secret_id = env_file.secret_id.or(Some(secret_id.to_string()));
-                env_file.field_id = env_file.field_id.or(Some(field_id.to_string()));
-                env_file.version = env_file.version.or(Some(1));
-
-                env_file.write()?;
+            if local_version < remote_version {
+                remote_env_file.filepath = Some(path.clone());
+                remote_env_file.write()?;
 
                 println!(
-                    "Downloaded and saved the secret {} to {}",
-                    style(format!("{}/{}", secret_id, field_id)).cyan(),
-                    style(filepath).magenta()
+                    "The local secret file is outdated. Updated to version {}",
+                    style(remote_version).cyan()
+                );
+            } else if local_version > remote_version {
+                let encrypted_content = encryption.encrypt(local_env_file.content.clone())?;
+                aws_secret.put_field(field_id.clone(), encrypted_content.clone())?;
+                aws_client
+                    .put_secret(secret_id, aws_secret.to_string()?)
+                    .await?;
+
+                println!(
+                    "The remote secret has been updated with the local secret file version {}",
+                    style(local_version).cyan()
+                );
+            } else if local_env_file.content != remote_env_file.content {
+                println!(
+                    "The local secret file has same version but different content. Please run `tc-secrets diff` to see the differences."
                 );
             } else {
-                // in this case, we compare the local file with the remote secret
-                let mut local_env_file = tools::EnvFile::new(path.clone())?;
-                local_env_file.parse()?;
-
-                let secret_id = local_env_file.secret_id.ok_or_else(|| {
-                    tools::CliError::InvalidEnvFileError(
-                        "The secret file does not contain a secret ID.".to_string(),
-                    )
-                })?;
-                let field_id = local_env_file.field_id.ok_or_else(|| {
-                    tools::CliError::InvalidEnvFileError(
-                        "The secret file does not contain a field ID.".to_string(),
-                    )
-                })?;
-
-                println!(
-                    "Synchronizing with remote secret {}",
-                    style(format!("{}/{}", secret_id, field_id)).cyan()
-                );
-
-                // load the remote secret from AWS Secrets Manager
-                let mut aws_secret =
-                    tools::AWSSecret::new(aws_client.load_secret(secret_id.clone()).await?)?;
-                let decrypted_remote_secret =
-                    encryption.decrypt(aws_secret.load_field(field_id.clone())?)?;
-
-                let mut remote_env_file = tools::EnvFile {
-                    filepath: None,
-                    content: decrypted_remote_secret,
-                    version: None,
-                    secret_id: Some(secret_id.clone()),
-                    field_id: Some(field_id.clone()),
-                };
-                remote_env_file.parse()?;
-                remote_env_file.secret_id = remote_env_file.secret_id.or(Some(secret_id.clone()));
-                remote_env_file.field_id = remote_env_file.field_id.or(Some(field_id.clone()));
-
-                // compare the local and remote versions
-                let local_version = local_env_file.version.clone().unwrap_or(0);
-                let remote_version = remote_env_file.version.clone().unwrap_or(0);
-
-                if local_version < remote_version {
-                    remote_env_file.filepath = Some(path.clone());
-                    remote_env_file.write()?;
-
-                    println!(
-                        "The local secret file is outdated. Updated to version {}",
-                        style(remote_version).cyan()
-                    );
-                } else if local_version > remote_version {
-                    let encrypted_content = encryption.encrypt(local_env_file.content.clone())?;
-                    aws_secret.put_field(field_id.clone(), encrypted_content.clone())?;
-                    aws_client
-                        .put_secret(secret_id, aws_secret.to_string()?)
-                        .await?;
-
-                    println!(
-                        "The remote secret has been updated with the local secret file version {}",
-                        style(local_version).cyan()
-                    );
-                } else {
-                    println!("The local secret file is up to date!");
-                }
+                println!("The local secret file is up to date!");
             }
         }
     }
 
     Ok(())
+}
+
+async fn load_env_info(
+    aws_client: &tools::AWS,
+    filepath: &str,
+    env_file: &mut tools::EnvFile,
+) -> Result<tools::AWSSecret, tools::CliError> {
+    // get the secret ID from the local file
+    if env_file.secret_id.is_none() {
+        let remote_secrets = aws_client.list_secrets().await?;
+
+        let selection = Select::new()
+            .with_prompt(format!(
+                "No local file found at {}. Please select a secret ID to download:",
+                style(filepath).cyan()
+            ))
+            .items(&remote_secrets)
+            .default(0)
+            .interact()
+            .expect("Failed to select a secret ID");
+
+        env_file.secret_id = Some(remote_secrets[selection].clone());
+    }
+
+    let secret_id = env_file.secret_id.clone().unwrap();
+
+    // create a new AWSSecret instance
+    let aws_secret = tools::AWSSecret::new(aws_client.load_secret(secret_id.clone()).await?)?;
+
+    // get the field ID from the local file
+    if env_file.field_id.is_none() {
+        let remote_fields = aws_secret.list_fields();
+
+        let selection = Select::new()
+            .with_prompt(format!(
+                "Please select a field ID to load from secret {}:",
+                style(secret_id.clone()).cyan()
+            ))
+            .items(&remote_fields)
+            .default(0)
+            .interact()
+            .expect("Failed to select a field ID");
+
+        env_file.field_id = Some(remote_fields[selection].clone());
+    }
+
+    Ok(aws_secret)
 }
