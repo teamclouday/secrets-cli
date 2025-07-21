@@ -320,5 +320,11 @@ async fn load_env_info(
         env_file.field_id = Some(remote_fields[selection].clone());
     }
 
+    if env_file.version.is_none() {
+        // if local version is not initialized, rewrite the local file with headers
+        env_file.version = Some(0);
+        env_file.write()?;
+    }
+
     Ok(aws_secret)
 }
